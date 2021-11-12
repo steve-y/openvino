@@ -12,6 +12,7 @@
 #include <type_traits>
 
 #include "openvino/core/coordinate.hpp"
+#include "openvino/core/rtti.hpp"
 #include "openvino/core/shape.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/runtime/allocator.hpp"
@@ -53,6 +54,13 @@ protected:
 
 public:
     /**
+     * @brief Checks openvino tensor type
+     * @param tensor a tensor which type will be checked
+     * @throw Exception if type check with specified tensor is not pass
+     */
+    static void type_check(const Tensor& tensor);
+
+    /**
      * @brief Default constructor
      */
     Tensor() = default;
@@ -71,8 +79,8 @@ public:
      * @param type Tensor element type
      * @param shape Tensor shape
      * @param host_ptr Pointer to pre-allocated host memory
-     * @param strides Optional strides parameters in elements. Strides are supposed to be equal to shape if they are not
-     * set
+     * @param strides Optional strides parameters in bytes. Strides are supposed to be computed automatically based
+     * on shape and element size
      */
     Tensor(const element::Type type, const Shape& shape, void* host_ptr, const Strides& strides = {});
 
@@ -116,7 +124,7 @@ public:
     size_t get_byte_size() const;
 
     /**
-     * @return Tensor's strides in elements
+     * @return Tensor's strides in bytes
      */
     Strides get_strides() const;
 
@@ -150,6 +158,45 @@ public:
      * @return `true` if current Tensor object is initialized, `false` - otherwise
      */
     explicit operator bool() const noexcept;
+
+    /**
+     * @brief Checks if the Tensor object can be cast to the type T
+     *
+     * @tparam T Type to be checked. Must represent a class derived from the Tensor
+     * @return true if this object can be dynamically cast to the type const T*. Otherwise, false
+     */
+    template <typename T>
+    typename std::enable_if<std::is_base_of<Tensor, T>::value, bool>::type is() const noexcept {
+        try {
+            T::type_check(*this);
+        } catch (...) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * @brief Casts this Tensor object to the type T.
+     *
+     * @tparam T Type to cast to. Must represent a class derived from the Tensor
+     * @return T object
+     */
+    template <typename T>
+    const typename std::enable_if<std::is_base_of<Tensor, T>::value, T>::type as() const {
+        T::type_check(*this);
+        return *static_cast<const T*>(this);
+    }
+
+    /**
+     * @brief Casts this Tensor object to the type T.
+     *
+     * @tparam T Type to cast to. Must represent a class derived from the Tensor
+     * @return T object
+     */
+    template <typename T, typename = typename std::enable_if<std::is_base_of<Tensor, T>::value>::type>
+    operator T() const {
+        return as<T>();
+    }
 };
 
 using TensorVector = std::vector<Tensor>;

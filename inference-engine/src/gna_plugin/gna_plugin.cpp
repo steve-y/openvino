@@ -42,7 +42,6 @@
 #include <ngraph/pass/manager.hpp>
 #include <legacy/convert_function_to_cnn_network.hpp>
 #include <legacy/transformations/convert_opset1_to_legacy/convert_opset1_to_legacy.hpp>
-#include <legacy/transformations/convert_opset1_to_legacy/convert_prior_to_ie_prior.hpp>
 
 #include <transformations/common_optimizations/common_optimizations.hpp>
 #include <transformations/control_flow/unroll_tensor_iterator.hpp>
@@ -70,13 +69,14 @@
 #include "transformations/convert_dwsc_to_scaleshifts.hpp"
 #include "transformations/op_conversions/lstm_cell_decomposition.hpp"
 #include "transformations/remove_single_input_concat.hpp"
+#include "transformations/broadcast_const.hpp"
 
 #include <ngraph/opsets/opset7.hpp>
 
 #if GNA_LIB_VER == 2
 #include <gna2-model-api.h>
 
-uint32_t ToByteSize(const Gna2DataType type) {
+inline uint32_t ToByteSize(const Gna2DataType type) {
     switch (type) {
     case Gna2DataTypeInt8:
     case Gna2DataTypeUint8:
@@ -686,8 +686,6 @@ void GNAPlugin::LoadNetwork(CNNNetwork & _network) {
         ngraph::pass::Manager manager;
         manager.register_pass<ngraph::pass::InitNodeInfo>();
         fake_quantized = ngraph::op::util::has_op_with_type<ngraph::opset7::FakeQuantize>(graph);
-        // WA: ConvertPriorBox must be executed before the 1st ConstantFolding pass
-        manager.register_pass<ngraph::pass::ConvertPriorBox>();
         manager.register_pass<ngraph::pass::CommonOptimizations>();
         manager.register_pass<ngraph::pass::LSTMCellDecomposition>();
         manager.register_pass<ConvertDWSCToScaleShifts>();
@@ -719,6 +717,15 @@ void GNAPlugin::LoadNetwork(CNNNetwork & _network) {
         manager.register_pass<ngraph::pass::ConvertOpSet2ToOpSet1>();
         manager.register_pass<ngraph::pass::ConvertOpSet1ToLegacy>();
         manager.register_pass<RemoveExtraReshapes>();
+        /*
+          Put BroadcastAddMultiplyConst here after ConvertOpSet..() transformations since there are conficts with them.
+          ngraph::pass::ConvertOpSet1ToLegacy -> ngraph::pass::BiasFusions ->
+                                                    ngraph::pass::ConvAddFusion, ngraph::pass::ConvMultiplyFusion
+          That transormations fuse bias into convolution and recognizes const node as [1, C, 1, 1].
+          TODO: move that transformation just beyond RemoveSingleInputConcat pass after removing ConvertOpSet1ToLegacy
+              transormations
+        */
+        manager.register_pass<BroadcastAddMultiplyConst>();
         // UnrollTI should be the last transformation in the transformation pipeline
         manager.register_pass<ngraph::pass::UnrollTensorIterator>();
         const auto& pass_config = manager.get_pass_config();
@@ -770,14 +777,13 @@ void GNAPlugin::LoadNetwork(CNNNetwork & _network) {
             passes->registerPass<RemoveConstPass>();
             passes->registerPass<UnrollLSTMCellPass>();
             passes->registerPass<RemoveSingleInputConcatPass>();
+            passes->registerPass<BroadcastConstPass>();
+            passes->registerPass<SubstituteScaleShiftBroadCastPass>();
         }
 
         // fake quantisation aware passes
         passes->registerPass<FuseFQIntoWeightsPass>();
         passes->registerPass<MoveFakeQuantizeLayerIntoQuantParamsPass>();
-
-        passes->registerPass<SubstituteScaleShiftBroadCastPass>();
-        passes->registerPass<BroadcastConstPass>();
 
         passes->registerPass<TransposeWeightsFromNCHWToNHWCPass>();
 
