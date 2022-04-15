@@ -177,4 +177,33 @@ INSTANTIATE_TEST_SUITE_P(
                         ::testing::Values(std::vector<size_t>({1, 8, 68, 68})),
                         ::testing::Values(CommonTestUtils::DEVICE_CPU)),
                         DeformableConvolutionLayerTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(
+        smoke_DeformableConvolution2D_MultipleGroups_Debugging, DeformableConvolutionLayerTest,
+        ::testing::Combine(
+                ::testing::Combine(
+                        ::testing::ValuesIn(std::vector<std::vector<size_t>> {{1, 16, 2, 2}}),  // offsets
+                        ::testing::ValuesIn(std::vector<std::vector<size_t>> {{2, 2, 2, 2}}),  // ker.
+                        ::testing::ValuesIn(std::vector<std::vector<size_t>> {{1, 1}}), // strides
+                        ::testing::Values(std::vector<ptrdiff_t>({0, 0})),
+                        ::testing::Values(std::vector<ptrdiff_t>({0, 0})),
+                        ::testing::ValuesIn(std::vector<std::vector<size_t>> {{1, 1}}), // dilations
+                        ::testing::ValuesIn(std::vector<size_t> {2}),  // gr.
+                        ::testing::ValuesIn(std::vector<size_t> {2}),  // def. gr.
+                        ::testing::ValuesIn(std::vector<size_t> {1}),       // numOutChannels
+                        ::testing::Values(ngraph::op::PadType::EXPLICIT),
+                        ::testing::ValuesIn(std::vector<bool> { false }),   // with_bilinear_interpolation_pad
+                        ::testing::ValuesIn(std::vector<bool> { false })),  // with_modulated_scalar
+                ::testing::ValuesIn(std::vector<InferenceEngine::Precision> {
+                InferenceEngine::Precision::FP32}), // , InferenceEngine::Precision::FP16,
+                                                    // InferenceEngine::Precision::I32,
+                                                    // InferenceEngine::Precision::I16
+                                                    // netPrecisions
+                ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),
+                ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),
+                ::testing::Values(InferenceEngine::Layout::ANY),
+                ::testing::Values(InferenceEngine::Layout::ANY),
+                ::testing::Values(std::vector<size_t>({1, 4, 3, 3})),
+                ::testing::Values(CommonTestUtils::DEVICE_CPU)),
+        DeformableConvolutionLayerTest::getTestCaseName);
 }  // namespace
